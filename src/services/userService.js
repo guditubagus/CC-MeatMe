@@ -1,4 +1,4 @@
-const db = require("../database/db");
+const db = require("../config/db");
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 const Joi = require("joi");
@@ -72,7 +72,9 @@ async function login(login) {
       }
 
       // create JWT token
-      const token = jwt.sign({ id: user.id }, process.env.JWT_SECRET, { expiresIn: '1h' });
+      const token = jwt.sign({ id: user.id }, process.env.JWT_SECRET, {
+        expiresIn: "1h",
+      });
       resolve(token);
       return token;
     });
@@ -82,49 +84,65 @@ async function login(login) {
 }
 
 // update user
-async function updateUser(id, update) {
-  const { error } = validateUpdate(update);
+updateUser = async (req, res) => {
+  const { id } = req.params;
+  const { name, email, password } = req.body;
+
+  // validate input
+  const schema = Joi.object({
+    name: Joi.string(),
+    email: Joi.string().email(),
+    password: Joi.string().min(10),
+  });
+  const { error } = schema.validate(req.body);
   if (error) {
-    throw new Error(error.details.map((detail) => detail.message).join(", "));
+    return res.status(400).send(error.details[0].message);
   }
 
-  const { name, email, password } = update;
+  try {
+    const sql = "SELECT * FROM users WHERE id = ?";
+    const [results] = await db.execute(sql, [id]);
 
-  // check email existed
-  const emailExists = await new Promise((resolve, reject) => {
-    db.query(
-      "SELECT * FROM users WHERE email = ? AND id != ?",
-      [email, id],
-      (err, result) => {
-        if (err) {
-          reject(err);
+    if (results.length === 0) {
+      res.status(404).send("User not found");
+    } else {
+      const user = results[0];
+
+      // check email existed
+      if (email && email !== user.email) {
+        const emailSql = "SELECT * FROM users WHERE email = ?";
+        const [emailResults] = await db.execute(emailSql, [email]);
+        if (emailResults.length > 0) {
+          return res.status(400).send("Email is already taken");
         }
-        resolve(result.length > 0);
       }
-    );
-  });
-  if (emailExists) {
-    throw new Error("Email is already taken");
-  }
 
-  // has password
-  let hashedPassword = null;
-  if (password) {
-    hashedPassword = await bcrypt.hash(password, 10);
-  }
-
-  const sql = `UPDATE users SET name = ?, email = ?, password = ? WHERE id = ?`;
-  const result = await new Promise((resolve, reject) => {
-    db.query(sql, [name, email, hashedPassword, id], (err, result) => {
-      if (err) {
-        reject(err);
+      if (name) {
+        user.name = name;
       }
-      resolve(result);
-    });
-  });
-  console.log(result);
-  return "User updated successfully";
-}
+      if (email) {
+        user.email = email;
+      }
+      if (password) {
+        user.password = await bcrypt.hash(password, 10);
+      }
+
+      const updateSql =
+        "UPDATE users SET name = ?, email = ?, password = ? WHERE id = ?";
+      const updateValues = [user.name, user.email, user.password, id];
+      await db.execute(updateSql, updateValues);
+
+      res.status(200).json({
+        id,
+        name: user.name,
+        email: user.email,
+      });
+    }
+  } catch (err) {
+    console.error(err);
+    res.status(500).send("Error updating user");
+  }
+};
 
 // validate input
 function validateSignup(signup) {
@@ -155,19 +173,6 @@ function validateLogin(login) {
     }),
   });
   return schema.validate(login, { abortEarly: false });
-}
-
-function validateUpdate(update) {
-  const schema = Joi.object({
-    name: Joi.string(),
-    email: Joi.string().email().messages({
-      "string.email": "Email must be a valid email address",
-    }),
-    password: Joi.string().min(10).messages({
-      "string.min": "Password must be at least 10 characters long",
-    }),
-  });
-  return schema.validate(update, { abortEarly: false });
 }
 
 module.exports = {
