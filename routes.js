@@ -102,7 +102,9 @@ router.post("/signin", validateLogin, (req, res, next) => {
         });
       }
       if (result) {
-        const token = JWT.sign({ id: result[0].id }, process.env.JWT_SECRET, { expiresIn: '1h' });
+        const token = JWT.sign({ id: result[0].id }, process.env.JWT_SECRET, {
+          expiresIn: "1h",
+        });
 
         return res.status(200).send({
           message: "Login Success!",
@@ -239,7 +241,9 @@ router.post("/login", validateLogin, (req, res, next) => {
         });
       }
       if (result) {
-        const token = JWT.sign({ id: result[0].id }, process.env.JWT_SECRET, { expiresIn: '1h' );
+        const token = JWT.sign({ id: result[0].id }, process.env.JWT_SECRET, {
+          expiresIn: "1h",
+        });
 
         return res.status(200).send({
           message: "Login Success",
