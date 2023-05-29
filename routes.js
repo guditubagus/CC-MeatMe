@@ -1,52 +1,77 @@
 const express = require("express");
 const router = express.Router();
-const db = require("./config").db;
+const db = require("./config/db");
+require("./config/storage");
 const bcrypt = require("bcrypt");
 const JWT = require("jsonwebtoken");
 const Joi = require("joi");
 const { Storage } = require("@google-cloud/storage");
 
 // validation input
-function validateSignup(signup) {
-  const schema = Joi.object({
-    name: Joi.string().required().max(30).messages({
-      "any.required": "Name is required",
-      "string.max": "Name allowed max 30 letters.",
-    }),
-    email: Joi.string().email().max(50).required().messages({
-      "any.required": "Email is required",
-      "string.email": "Email must be a valid email address",
-    }),
-    password: Joi.string().min(10).required().messages({
-      "any.required": "Password is required",
-      "string.min": "Password must be at least 10 characters long",
-    }),
-  });
-  return schema.validate(signup, { abortEarly: false });
-}
 
-function validateLogin(login) {
-  const schema = Joi.object({
-    email: Joi.string().email().required().messages({
-      "any.required": "Email is required",
-      "string.email": "Email must be a valid email address",
-    }),
-    password: Joi.string().required().messages({
-      "any.required": "Password is required",
-    }),
-  });
-  return schema.validate(login, { abortEarly: false });
-}
+const schemaRegister = Joi.object({
+  name: Joi.string().min(3).max(30).required().messages({
+    "any.required": "Name is required",
+    "string.min": "Name allowed min 3 letters.",
+    "string.max": "Name allowed max 30 letters.",
+  }),
+  email: Joi.string().email().required().messages({
+    "any.required": "Email is required",
+    "string.email": "Email must be a valid email address",
+  }),
+  password: Joi.string().min(10).required().messages({
+    "any.required": "Password is required",
+    "string.min": "Password must be at least 10 characters long",
+  }),
+  phone_number: Joi.string().required().messages({
+    "any.required": "Phone number is required",
+  }),
+  address: Joi.string().required().messages({
+    "any.required": "Address is required",
+  }),
+});
+
+const schemaLogin = Joi.object({
+  email: Joi.string().email().required().messages({
+    "any.required": "Email is required",
+    "string.email": "Email must be a valid email address",
+  }),
+  password: Joi.string().required().messages({
+    "any.required": "Password is required",
+  }),
+});
+
+const validateSignup = (req, res, next) => {
+  const validationResult = schemaRegister.validate(req.body);
+  if (validationResult.error) {
+    return res
+      .status(400)
+      .json({ error: validationResult.error.details[0].message });
+  }
+  next();
+};
+
+const validateLogin = (req, res, next) => {
+  const validationResult = schemaLogin.validate(req.body);
+  if (validationResult.error) {
+    return res
+      .status(400)
+      .json({ error: validationResult.error.details[0].message });
+  }
+  next();
+};
 
 // buyer
 
 // signup
+
 router.post("/signup", validateSignup, (req, res, next) => {
   // checking account first, existed or not with email
   const sql = "SELECT * FROM buyers WHERE email = ?";
+  console.log(req.body);
   const { name, email, password, phone_number, address } = req.body;
   db.query(sql, [email], (err, result) => {
-    if (result.length > 0) {
+    if (result.length) {
       return res.status(409).send({
         message: "This account existed",
       });
@@ -79,7 +104,7 @@ router.post("/signup", validateSignup, (req, res, next) => {
   });
 });
 
-// login
+// sigin
 router.post("/signin", validateLogin, (req, res, next) => {
   const { email, password } = req.body;
   const sql = "SELECT * FROM buyers WHERE email = ?";
@@ -94,27 +119,25 @@ router.post("/signin", validateLogin, (req, res, next) => {
         message: "Wrong email or password",
       });
     }
-
-    bcrypt.compare(password, result[0]["password"], (err, result) => {
+    bcrypt.compare(password, result[0]["password"], (err, isMatch) => {
       if (err) {
         return res.status(401).send({
           message: "Wrong email or password",
         });
       }
-      if (result) {
+      if (isMatch && result[0].id) {
         const token = JWT.sign({ id: result[0].id }, process.env.JWT_SECRET, {
           expiresIn: "1h",
         });
-
         return res.status(200).send({
           message: "Login Success!",
-          token,
-          user: result[0],
+          token: token,
+        });
+      } else {
+        return res.status(401).send({
+          message: "Wrong email or password",
         });
       }
-      return res.status(401).send({
-        message: "Wrong email or password",
-      });
     });
   });
 });
@@ -133,7 +156,7 @@ router.get("/products", (req, res) => {
 // profile app buyer
 router.get("/profile/:email", (req, res) => {
   const email = req.params.email;
-  const sql = "SELECT * FROM consumers WHERE email = ?";
+  const sql = "SELECT * FROM buyers WHERE email = ?";
 
   if (
     !req.headers.authorization.startsWith("Bearer") ||
@@ -146,16 +169,22 @@ router.get("/profile/:email", (req, res) => {
   }
   const token = req.headers.authorization.split(" ")[1];
   const decoded = JWT.verify(token, process.env.JWT_SECRET);
-  db.query(sql, [email], decoded.id, (err, result) => {
-    if (err) throw err;
-    return res.send({
+  db.query(sql, [email, decoded.id], (err, result) => {
+    if (err) {
+      console.error(err);
+      return res.status(500).json({
+        message: "Internal server error",
+      });
+    }
+    return res.status(200).json({
+      message: "Success",
       data: result,
     });
   });
 });
 
 // search products
-router.get("/products/search?meatname=:meatname", (req, res) => {
+router.get("/products/search/:meatname", (req, res) => {
   const meatname = req.params.meatname;
   const sql = "SELECT * FROM products WHERE meatname = ?";
   db.query(sql, [meatname], (err, result) => {
@@ -181,11 +210,12 @@ router.post("/cart", (req, res) => {});
 
 // register
 router.post("/register", validateSignup, (req, res, next) => {
-  // check account existed or not with email
-  const { name, email, password, phone_number, address } = req.body;
+  // checking account first, existed or not with email
   const sql = "SELECT * FROM sellers WHERE email = ?";
+  console.log(req.body);
+  const { name, email, password, phone_number, address } = req.body;
   db.query(sql, [email], (err, result) => {
-    if (result.length > 0) {
+    if (result.length) {
       return res.status(409).send({
         message: "This account existed",
       });
@@ -197,7 +227,7 @@ router.post("/register", validateSignup, (req, res, next) => {
           });
         } else {
           const sql =
-            "INSERT INTO sellers (name, email, password, phone_number, address) VALUES(?, ?, ?, ?, ?)";
+            "INSERT INTO sellers (name, email, password, phone_number, address) VALUES (?, ?, ?, ?, ?)";
           db.query(
             sql,
             [name, email, hash, phone_number, address],
@@ -233,27 +263,25 @@ router.post("/login", validateLogin, (req, res, next) => {
         message: "Wrong email or password",
       });
     }
-
-    bcrypt.compare(password, result[0]["password"], (err, result) => {
+    bcrypt.compare(password, result[0]["password"], (err, isMatch) => {
       if (err) {
         return res.status(401).send({
           message: "Wrong email or password",
         });
       }
-      if (result) {
+      if (isMatch && result[0].id) {
         const token = JWT.sign({ id: result[0].id }, process.env.JWT_SECRET, {
           expiresIn: "1h",
         });
-
         return res.status(200).send({
-          message: "Login Success",
-          token,
-          user: result[0],
+          message: "Login Success!",
+          token: token,
+        });
+      } else {
+        return res.status(401).send({
+          message: "Wrong email or password",
         });
       }
-      return res.status(401).send({
-        message: "Wrong email or password",
-      });
     });
   });
 });
@@ -262,6 +290,7 @@ router.post("/login", validateLogin, (req, res, next) => {
 router.get("/profileSeller/:email", (req, res) => {
   const email = req.params.email;
   const sql = "SELECT * FROM sellers WHERE email = ?";
+
   if (
     !req.headers.authorization.startsWith("Bearer") ||
     !req.headers.authorization.split(" ")[1] ||
@@ -273,9 +302,15 @@ router.get("/profileSeller/:email", (req, res) => {
   }
   const token = req.headers.authorization.split(" ")[1];
   const decoded = JWT.verify(token, process.env.JWT_SECRET);
-  db.query(sql, [email], decoded.id, (err, result) => {
-    if (err) throw err;
-    return res.send({
+  db.query(sql, [email, decoded.id], (err, result) => {
+    if (err) {
+      console.error(err);
+      return res.status(500).json({
+        message: "Internal server error",
+      });
+    }
+    return res.status(200).json({
+      message: "Success",
       data: result,
     });
   });
@@ -298,7 +333,6 @@ router.post("/products", (req, res) => {
   const userID = decoded.id;
 
   // products details
-  const id_product = req.body.id_product;
   const address = req.body.address;
   const meatname = req.body.meatname;
   const details = req.body.details;
@@ -337,19 +371,11 @@ router.post("/products", (req, res) => {
         // Insert the product into the database
         const imageUrl = `https://storage.googleapis.com/${process.env.BUCKET_NAME}/${fileName}`;
         const sql = `
-          INSERT INTO products(id_product, address, meatname, details, stock, price, image)
-          VALUES (?, ?, ?, ?, ?, ?, ?)
+          INSERT INTO products(address, meatname, details, stock, price, image)
+          VALUES (?, ?, ?, ?, ?, ?)
         `;
 
-        const values = [
-          id_product,
-          address,
-          meatname,
-          details,
-          stock,
-          price,
-          imageUrl,
-        ];
+        const values = [address, meatname, details, stock, price, imageUrl];
         const [result] = await db.execute(sql, values);
 
         res.status(201).send(result);
@@ -378,14 +404,8 @@ router.put("/products/:id_product", (req, res) => {
   }
   const token = req.headers.authorization.split(" ")[1];
   const decoded = JWT.verify(token, process.env.JWT_SECRET);
-  db.query(sql, [email], decoded.id, (err, result) => {
-    if (err) throw err;
-    return res.send({
-      data: result,
-    });
-  });
 
-  const id_product = req.body.id_product;
+  const id_product = req.params.id_product;
   const address = req.body.address;
   const meatname = req.body.meatname;
   const details = req.body.details;
@@ -398,9 +418,10 @@ router.put("/products/:id_product", (req, res) => {
   db.query(
     sql,
     [address, meatname, details, stock, price, id_product],
+    decoded.id,
     (err, result) => {
       if (err) throw err;
-      return res.send(result);
+      return res.send({ data: result });
     }
   );
 });
@@ -418,19 +439,13 @@ router.delete("/products/:id_product", (req, res) => {
   }
   const token = req.headers.authorization.split(" ")[1];
   const decoded = JWT.verify(token, process.env.JWT_SECRET);
-  db.query(sql, [email], decoded.id, (err, result) => {
-    if (err) throw err;
-    return res.send({
-      data: result,
-    });
-  });
 
   const id_product = req.params.id_product;
   const sql = "DELETE FROM products WHERE id_product = ?";
 
-  db.query(sql, [id_product], (err, result) => {
+  db.query(sql, [id_product], decoded.id, (err, result) => {
     if (err) throw err;
-    return res.send(result);
+    return res.send({ data: result });
   });
 });
 
