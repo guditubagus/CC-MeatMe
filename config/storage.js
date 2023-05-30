@@ -16,3 +16,5 @@ bucket
   .catch((err) => {
     console.error("Google Cloud Storage connection error:", err);
   });
+
+module.exports = storage;

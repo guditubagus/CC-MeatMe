@@ -1,11 +1,12 @@
 const express = require("express");
 const router = express.Router();
 const db = require("./config/db");
-require("./config/storage");
+const gcs = require("./config/storage");
 const bcrypt = require("bcrypt");
 const JWT = require("jsonwebtoken");
 const Joi = require("joi");
 const { Storage } = require("@google-cloud/storage");
+const multer = require("multer");
 
 // validation input
 
@@ -68,7 +69,6 @@ const validateLogin = (req, res, next) => {
 router.post("/signup", validateSignup, (req, res, next) => {
   // checking account first, existed or not with email
   const sql = "SELECT * FROM buyers WHERE email = ?";
-  console.log(req.body);
   const { name, email, password, phone_number, address } = req.body;
   db.query(sql, [email], (err, result) => {
     if (result.length) {
@@ -159,12 +159,11 @@ router.get("/profile/:email", (req, res) => {
   const sql = "SELECT * FROM buyers WHERE email = ?";
 
   if (
-    !req.headers.authorization.startsWith("Bearer") ||
-    !req.headers.authorization.split(" ")[1] ||
-    !req.headers.authorization
+    !req.headers.authorization ||
+    !req.headers.authorization.startsWith("Bearer")
   ) {
     return res.status(422).json({
-      message: "Please use token before!",
+      message: "Unauthorized! Please input the token you obtained before!",
     });
   }
   const token = req.headers.authorization.split(" ")[1];
@@ -212,7 +211,6 @@ router.post("/cart", (req, res) => {});
 router.post("/register", validateSignup, (req, res, next) => {
   // checking account first, existed or not with email
   const sql = "SELECT * FROM sellers WHERE email = ?";
-  console.log(req.body);
   const { name, email, password, phone_number, address } = req.body;
   db.query(sql, [email], (err, result) => {
     if (result.length) {
@@ -292,12 +290,11 @@ router.get("/profileSeller/:email", (req, res) => {
   const sql = "SELECT * FROM sellers WHERE email = ?";
 
   if (
-    !req.headers.authorization.startsWith("Bearer") ||
-    !req.headers.authorization.split(" ")[1] ||
-    !req.headers.authorization
+    !req.headers.authorization ||
+    !req.headers.authorization.startsWith("Bearer")
   ) {
     return res.status(422).json({
-      message: "Please use token before!",
+      message: "Unauthorized! Please input the token you obtained before!",
     });
   }
   const token = req.headers.authorization.split(" ")[1];
@@ -317,91 +314,101 @@ router.get("/profileSeller/:email", (req, res) => {
 });
 
 // make data products (only works for seller)
-router.post("/products", (req, res) => {
+
+const storage = multer.memoryStorage();
+const fileFilter = (req, file, cb) => {
+  const allowedExtensions = ["jpg", "jpeg", "png"];
+  const extension = file.originalname.split(".").pop().toLowerCase();
+  if (allowedExtensions.includes(extension)) {
+    cb(null, true);
+  } else {
+    cb(null, false);
+  }
+};
+
+const upload = multer({ storage, fileFilter });
+
+router.post("/products", upload.single("image"), async (req, res) => {
   if (
     !req.headers.authorization ||
     !req.headers.authorization.startsWith("Bearer")
   ) {
     return res.status(422).json({
-      message: "Please use token before!",
+      message: "Unauthorized! Please input the token you obtained before!",
     });
   }
 
   const token = req.headers.authorization.split(" ")[1];
 
-  const decoded = JWT.verify(token, process.env.JWT_SECRET);
-  const userID = decoded.id;
-
-  // products details
-  const address = req.body.address;
-  const meatname = req.body.meatname;
-  const details = req.body.details;
-  const stock = req.body.stock;
-  const price = req.body.price;
-  const image = req.file;
-
-  if (!image) {
-    return res.status(400).send("No image file uploaded");
-  }
-
-  const allowedExtensions = ["jpg", "jpeg", "png"];
-  const extension = image.originalname.split(".").pop().toLowerCase();
-  if (!allowedExtensions.includes(extension)) {
-    return res.status(400).send("Only image files are allowed");
-  }
-
-  const date = new Date();
-
-  const fileName = `${date.toJSON()}_${image.originalname}`;
-
-  // Upload the image to GCS
   try {
-    const blob = gcs.file(fileName);
+    const decoded = JWT.verify(token, process.env.JWT_SECRET);
+    const userID = decoded.id;
+
+    // product details
+    const { address, meatname, details, stock, price } = req.body;
+    const image = req.file;
+
+    if (!image) {
+      return res
+        .status(400)
+        .send({
+          message: "No image file uploaded or your files is not images",
+        });
+    }
+
+    const date = new Date();
+
+    const fileName = `${date.getTime()}_${image.originalname}`;
+
+    // upload the image to GCS
+    const blob = gcs.bucket(process.env.BUCKET_NAME).file(fileName);
     const stream = blob.createWriteStream({
       metadata: {
         contentType: image.mimetype,
       },
     });
+
     stream.on("error", (err) => {
       console.error(err);
       res.status(500).send("Error uploading image");
     });
+
     stream.on("finish", async () => {
       try {
-        // Insert the product into the database
         const imageUrl = `https://storage.googleapis.com/${process.env.BUCKET_NAME}/${fileName}`;
         const sql = `
           INSERT INTO products(address, meatname, details, stock, price, image)
           VALUES (?, ?, ?, ?, ?, ?)
         `;
-
         const values = [address, meatname, details, stock, price, imageUrl];
-        const [result] = await db.execute(sql, values);
 
-        res.status(201).send(result);
+        await db.execute(sql, values);
+
+        res.status(201).send("Product created successfully");
       } catch (err) {
         console.error(err);
         res.status(500).send("Error creating product");
       }
     });
+
     stream.end(image.buffer);
   } catch (err) {
     console.error(err);
-    res.status(500).send("Error uploading image");
+    res.status(500).send("Error verifying token");
   }
 });
 
 // change data product by ID
 router.put("/products/:id_product", (req, res) => {
   if (
-    !req.headers.authorization.startsWith("Bearer") ||
-    !req.headers.authorization.split(" ")[1] ||
-    !req.headers.authorization
+    !req.headers.authorization ||
+    !req.headers.authorization.startsWith("Bearer")
   ) {
     return res.status(422).json({
-      message: "Please use token before!",
+      message: "Unauthorized! Please input the token you obtained before!",
     });
   }
+
   const token = req.headers.authorization.split(" ")[1];
   const decoded = JWT.verify(token, process.env.JWT_SECRET);
 
@@ -413,15 +420,17 @@ router.put("/products/:id_product", (req, res) => {
   const price = req.body.price;
 
   const sql =
-    "UPDATE products SET address = ?, meatname = ?, details = ?, stock = ?, price = ? WHERE id_product = ?";
+    "UPDATE products SET address = ?, meatname = ?, details = ?, stock = ?, price = ? WHERE id = ?";
 
   db.query(
     sql,
-    [address, meatname, details, stock, price, id_product],
-    decoded.id,
+    [address, meatname, details, stock, price, id_product, decoded.id],
     (err, result) => {
-      if (err) throw err;
-      return res.send({ data: result });
+      if (err) {
+        console.error(err);
+        return res.status(500).send("Error updating product");
+      }
+      return res.send({ data: "Product updated successfully" });
     }
   );
 });
@@ -429,23 +438,26 @@ router.put("/products/:id_product", (req, res) => {
 // delete product data by ID
 router.delete("/products/:id_product", (req, res) => {
   if (
-    !req.headers.authorization.startsWith("Bearer") ||
-    !req.headers.authorization.split(" ")[1] ||
-    !req.headers.authorization
+    !req.headers.authorization ||
+    !req.headers.authorization.startsWith("Bearer")
   ) {
     return res.status(422).json({
-      message: "Please use token before!",
+      message: "Unauthorized! Please input the token you obtained before!",
     });
   }
+
   const token = req.headers.authorization.split(" ")[1];
   const decoded = JWT.verify(token, process.env.JWT_SECRET);
 
   const id_product = req.params.id_product;
-  const sql = "DELETE FROM products WHERE id_product = ?";
+  const sql = "DELETE FROM products WHERE id = ?";
 
-  db.query(sql, [id_product], decoded.id, (err, result) => {
-    if (err) throw err;
-    return res.send({ data: result });
+  db.query(sql, [id_product, decoded.id], (err, result) => {
+    if (err) {
+      console.error(err);
+      return res.status(500).send("Error deleting product");
+    }
+    return res.send({ message: "Product deleted!" });
   });
 });
 
