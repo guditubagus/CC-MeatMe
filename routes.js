@@ -345,15 +345,13 @@ router.post("/products", upload.single("image"), async (req, res) => {
     const userID = decoded.id;
 
     // product details
-    const { address, meatname, details, stock, price } = req.body;
+    const { address, meatname, details, stock, price, seller } = req.body;
     const image = req.file;
 
     if (!image) {
-      return res
-        .status(400)
-        .send({
-          message: "No image file uploaded or your files is not images",
-        });
+      return res.status(400).send({
+        message: "No image file uploaded or your files is not images",
+      });
     }
 
     const date = new Date();
@@ -377,10 +375,18 @@ router.post("/products", upload.single("image"), async (req, res) => {
       try {
         const imageUrl = `https://storage.googleapis.com/${process.env.BUCKET_NAME}/${fileName}`;
         const sql = `
-          INSERT INTO products(address, meatname, details, stock, price, image)
-          VALUES (?, ?, ?, ?, ?, ?)
+          INSERT INTO products(address, meatname, details, stock, price, seller, image)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
         `;
-        const values = [address, meatname, details, stock, price, imageUrl];
+        const values = [
+          address,
+          meatname,
+          details,
+          stock,
+          price,
+          seller,
+          imageUrl,
+        ];
 
         await db.execute(sql, values);
 
