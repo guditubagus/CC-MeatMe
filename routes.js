@@ -202,8 +202,123 @@ router.get("/products/:meatname", (req, res) => {
   });
 });
 
-// cart
-router.post("/cart", (req, res) => {});
+// cart or order product
+router.post("/order", (req, res) => {
+  if (
+    !req.headers.authorization ||
+    !req.headers.authorization.startsWith("Bearer")
+  ) {
+    return res.status(422).json({
+      message: "Unauthorized! Please input the token you obtained before!",
+    });
+  }
+  const { productId, quantity } = req.body;
+
+  // get stock and price
+  const sql = `SELECT price, stock FROM products WHERE id = ?`;
+  db.query(sql, [productId], (err, results) => {
+    if (err) {
+      throw err;
+    }
+
+    if (results.length === 0) {
+      return res.status(404).json({ error: "Product not found" });
+    }
+
+    const product = results[0];
+    const { price, stock } = product;
+
+    if (stock < quantity) {
+      return res.status(400).json({ error: "Insufficient stock" });
+    }
+
+    const totalPrice = price * quantity;
+
+    const insertOrder = `INSERT INTO orders (product_id, quantity, total_price) VALUES (?, ?, ?)`;
+    db.query(insertOrder, [productId, quantity, totalPrice], (err, results) => {
+      if (err) {
+        throw err;
+      }
+
+      // update stock when buyers make a cart or oder product
+      const updatedStock = stock - quantity;
+      const updateStock = `UPDATE products SET stock = ? WHERE id = ?`;
+      db.query(updateStock, [updatedStock, productId], (err, results) => {
+        if (err) {
+          throw err;
+        }
+
+        res.status(201).json({ message: "Order created successfully" });
+      });
+    });
+  });
+});
+
+// buyers update status info for order
+router.put("/order/:orderId", (req, res) => {
+  if (
+    !req.headers.authorization ||
+    !req.headers.authorization.startsWith("Bearer")
+  ) {
+    return res.status(422).json({
+      message: "Unauthorized! Please input the token you obtained before!",
+    });
+  }
+  const { orderId } = req.params;
+  const { status } = req.body;
+
+  // delete order if status is delivered
+  if (status === "delivered") {
+    const deleteOrder = `DELETE FROM orders WHERE id = ?`;
+    db.query(deleteOrder, [orderId], (err, results) => {
+      if (err) {
+        throw err;
+      }
+
+      res.status(200).json({ message: "Order deleted successfully" });
+    });
+  } else {
+    // update the status of the order in the order table
+    const updateOrder = `UPDATE orders SET status = ? WHERE id = ?`;
+    db.query(updateOrder, [status, orderId], (err, results) => {
+      if (err) {
+        throw err;
+      }
+
+      if (results.affectedRows === 0) {
+        return res.status(404).json({ error: "Order not found" });
+      }
+
+      res.status(200).json({ message: "Order status updated successfully" });
+    });
+  }
+});
+
+// buyers view order status info
+router.get("/order/:orderId", (req, res) => {
+  if (
+    !req.headers.authorization ||
+    !req.headers.authorization.startsWith("Bearer")
+  ) {
+    return res.status(422).json({
+      message: "Unauthorized! Please input the token you obtained before!",
+    });
+  }
+  const { orderId } = req.params;
+
+  const sql = `SELECT * FROM orders WHERE id = ?`;
+  db.query(sql, [orderId], (err, results) => {
+    if (err) {
+      throw err;
+    }
+
+    if (results.length === 0) {
+      return res.status(404).json({ error: "Order not found" });
+    }
+
+    res.status(200).json(results[0]);
+  });
+});
 
 // seller
 
@@ -464,6 +579,26 @@ router.delete("/products/:id_product", (req, res) => {
       return res.status(500).send("Error deleting product");
     }
     return res.send({ message: "Product deleted!" });
+  });
+});
+
+// sellers get order info from buyers
+router.get("/orders", (req, res) => {
+  if (
+    !req.headers.authorization ||
+    !req.headers.authorization.startsWith("Bearer")
+  ) {
+    return res.status(422).json({
+      message: "Unauthorized! Please input the token you obtained before!",
+    });
+  }
+  const sql = `SELECT * FROM orders`;
+  db.query(sql, (err, results) => {
+    if (err) {
+      throw err;
+    }
+
+    res.status(200).json(results);
   });
 });
 
