@@ -40,7 +40,7 @@ def process_image():
 
     response = {
         'category': classes[predicted_class],
-        'confidence': float(predictions[0][predicted_class])
+        'confidence': format(float(predictions[0][predicted_class]), ".5f")
     }
 
     return jsonify(response)
