@@ -3,6 +3,18 @@
 
 This projects have purpose to creating an API that will be consumed by the frontend such as android mobile apps.
 
+## Tech Stack
+**Server:** Google Cloud Platform, Node.js, Express, Flask
+
+
+## Pictures
+### a. Cloud Architecture
+
+![cloud-architecture](./images/cloud-architecture.png "cloud-architecture")
+
+### b. Database Design
+
+![db-design](./images/db-design.png "db-design")
 
 ## Environment Variables
 
@@ -68,19 +80,208 @@ To deploy this project locally, run
   docker run -p 3000:3000 -itd backend-api:v1
   docker run -p 5000:5000 -itd ml-api:v1
 ```
-And now, you can use pacman or other REST tools to test those API's
+And now, you can use [postman](https://www.postman.com/downloads/) or other REST tools to test those API's
 
 
-## Tech Stack
-**Server:** Google Cloud Platform, Node.js, Express, Flask
+## API Reference
+
+### xx AS BUYERS xx
+
+#### Sign Up Accounts for Buyers
+
+```
+  POST /api/signup
+```
+
+| Body | Type     | Description                |
+| :-------- | :------- | :------------------------- |
+| `name` | `string` | **Required**. Your Name |
+| `email` | `string` | **Required**. Your Valid Email |
+| `password` | `string` | **Required**. Your Password |
+| `phone_number` | `string` | **Required**. Your Phone Number |
+| `address` | `string` | **Required**. Your Address |
+
+#### Sign In Accounts for Buyers
+
+```
+  POST /api/signin
+```
+
+| Body | Type     | Description                |
+| :-------- | :------- | :------------------------- |
+| `email` | `string` | **Required**. Your Valid Email |
+| `password` | `string` | **Required**. Your Password |
 
 
-## Pictures
-### a. Cloud Architecture
+#### Retrieve Buyer Profile Info
 
-![cloud-architecture](./images/cloud-architecture.png "cloud-architecture")
+```
+  GET /api/profile/:email
+```
 
-### b. Database Design
+| Authorization | Type     | Description                |
+| :-------- | :------- | :------------------------- |
+| `Bearer Token` | `string` | **Required**. Your Valid Token |
 
-![db-design](./images/db-design.png "db-design")
+
+
+#### Retrieve All Products Items
+
+```
+  GET /api/products
+```
+
+#### Search Product/Item
+
+```
+  GET /api/products/search/:meatname
+```
+
+#### Details Product/Item
+
+```
+  GET /api/products/:meatname
+```
+
+#### Make an Order
+
+```
+  POST /api/order
+```
+| Authorization | Type     | Description                |
+| :-------- | :------- | :------------------------- |
+| `Bearer Token` | `string` | **Required**. Your Valid Token |
+
+| Body | Type     | Description                |
+| :-------- | :------- | :------------------------- |
+| `productId` | `string` | ID Item which You Want to Buy |
+| `quantity` | `string` | Quantity of Item which You Want to Buy |
+
+#### Update Status Info
+
+```
+  PUT /api/order/:orderId
+```
+| Authorization | Type     | Description                |
+| :-------- | :------- | :------------------------- |
+| `Bearer Token` | `string` | **Required**. Your Valid Token |
+
+| Body | Type     | Description                |
+| :-------- | :------- | :------------------------- |
+| `status` | `string` | Status of Order (example: "delivered") |
+
+#### View Order 
+
+```
+  GET /api/order/:orderId
+```
+| Authorization | Type     | Description                |
+| :-------- | :------- | :------------------------- |
+| `Bearer Token` | `string` | **Required**. Your Valid Token |
+
+---
+---
+---
+### xx AS SELLERS xx
+
+#### Register Accounts for Sellers
+```
+  POST /api/register
+```
+
+| Body | Type     | Description                |
+| :-------- | :------- | :------------------------- |
+| `name` | `string` | **Required**. Your Name |
+| `email` | `string` | **Required**. Your Valid Email |
+| `password` | `string` | **Required**. Your Password |
+| `phone_number` | `string` | **Required**. Your Phone Number |
+| `address` | `string` | **Required**. Your Address |
+
+#### Login Accounts for Sellers
+
+```
+  POST /api/login
+```
+
+| Body | Type     | Description                |
+| :-------- | :------- | :------------------------- |
+| `email` | `string` | **Required**. Your Valid Email |
+| `password` | `string` | **Required**. Your Password |
+
+
+#### Retrieve Seller Profile Info
+
+```
+  GET /api/profileSeller/:email
+```
+
+| Authorization | Type     | Description                |
+| :-------- | :------- | :------------------------- |
+| `Bearer Token` | `string` | **Required**. Your Valid Token |
+
+
+#### Make a Product
+```
+  POST /api/products
+```
+| Authorization | Type     | Description                |
+| :-------- | :------- | :------------------------- |
+| `Bearer Token` | `string` | **Required**. Your Valid Token |
+
+| Body Form | Type     | Description                |
+| :-------- | :------- | :------------------------- |
+| `address` | `string` | **Required**. Location of Seller |
+| `meatname` | `string` | **Required**. Name of Meat Item |
+| `details` | `string` | **Required**. Details of Meat Item |
+| `stock` | `int` | **Required**. Stock of Meat Item |
+| `price` | `int` | **Required**. Price of Meat Item |
+| `seller` | `string` | **Required**. Seller of Meat Item |
+| `image` | `file` | **Required**. File image of Meat Item |
+
+#### Change Data Product
+```
+  PUT /api/products/:id_product
+```
+| Authorization | Type     | Description                |
+| :-------- | :------- | :------------------------- |
+| `Bearer Token` | `string` | **Required**. Your Valid Token |
+
+| Body  | Type     | Description                |
+| :-------- | :------- | :------------------------- |
+| `address` | `string` | Location of Seller |
+| `meatname` | `string` | Name of Meat Item |
+| `details` | `string` | Details of Meat Item |
+| `stock` | `int` | Stock of Meat Item |
+| `price` | `int` | Price of Meat Item |
+
+#### Delete Data Product
+```
+  DELETE /api/products/:id_product
+```
+| Authorization | Type     | Description                |
+| :-------- | :------- | :------------------------- |
+| `Bearer Token` | `string` | **Required**. Your Valid Token |
+
+#### Sellers Get Order Info from Buyers
+```
+  GET /api/orders
+```
+| Authorization | Type     | Description                |
+| :-------- | :------- | :------------------------- |
+| `Bearer Token` | `string` | **Required**. Your Valid Token |
+
+
+---
+---
+---
+#### Image Detection
+```
+  POST /predict
+```
+
+| Body | Type     | Description                       |
+| :-------- | :------- | :-------------------------------- |
+| `image`      | `file` | **Required**. File image to be detect |
+
+
 
